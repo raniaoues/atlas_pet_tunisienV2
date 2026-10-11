@@ -10,9 +10,9 @@ paths:
   # ---------- ENTRÉES (vos données, jamais modifiées) ----------
   raw_dir: data/RAW                          # les 80 PET sujets
   reference_pet: data/Reference/971882.nii   # le PET de référence
-  mni_template: data/mni_template/MNI152.nii            # IRM MNI152 (tête entière)
-  region_map: data/region_map/AAL3v1_1mm.nii            # carte de régions AAL3 (un numéro par région)
-  region_labels: data/region_labels/AAL3v1_1mm.nii.txt     # dictionnaire numéro -> nom de région
+  mni_template: data/mni_template/MNI152.nii # IRM MNI152 (tête entière)
+  region_map: data/region_map/AAL3v1_1mm.nii # carte de régions AAL3 (un numéro par région)
+  region_labels: data/region_labels/AAL3v1_1mm.nii.txt  # dictionnaire numéro -> nom de région
 
   # ---------- DOSSIERS DE SORTIE (créés automatiquement) ----------
   interim_dir: data/interim
@@ -42,7 +42,9 @@ mask:
 
 registration:
   # --- Modèle de transformation ---
-  model: similarity                   # similarity (7 paramètres, stable) ou affine (12 paramètres, à comparer)
+  model: auto                         # auto, similarity (7 paramètres) ou affine (12 paramètres)
+  auto_min_dice_gain: 0.02            # auto : l'affine n'est retenu que s'il gagne au moins ce Dice...
+  auto_min_nmi_gain: 0.003            # ... ET au moins cette information mutuelle normalisée
 
   # --- Départ par la forme : balayage des inclinaisons de la tête ---
   pose_pitch_range_deg: [-60, 60]     # inclinaisons testées (degrés)
@@ -64,4 +66,5 @@ registration:
   # --- Garde-fous ---
   warn_rotation_deg: 15               # au-delà : avertissement (à vérifier sur la figure)
   max_rotation_deg: 60                # au-delà : rejet (tête retournée ?)
-  scale_range: [0.8, 1.25]            # échelle plausible de la tête
+  scale_range: [0.8, 1.25]            # échelle plausible de la tête, par axe du PET
+  max_shear_deg: 35                   # cisaillement maximal plausible (une inclinaison de gantry va jusqu'à ~30)

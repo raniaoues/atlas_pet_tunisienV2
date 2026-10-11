@@ -238,21 +238,21 @@ def make_evaluator(fixed, moving, brain_mask, silhouette_array, wide_array):
 def describe_transform(transform):
     """Résume la transformation PET -> IRM : déterminant, rotation, échelles et cisaillements.
 
-    - `scales` : valeurs singulières (étirements principaux), utilisées par les garde-fous.
-    - `axis_scales`, `shear_deg` : décomposition B = Q x K (Q rotation, K triangulaire) dans les axes du PET :
-      échelle le long de x (gauche-droite), y (avant-arrière), z (haut-bas), et cisaillements entre axes.
-      Le cisaillement y-z (l'axe haut-bas penché vers l'avant) est celui d'une inclinaison de gantry.
+    Décomposition B = Q x K : Q = rotation de la tête, K = échelles et cisaillements dans les AXES DU PET
+    (x gauche-droite, y avant-arrière, z haut-bas). Le cisaillement y-z (l'axe haut-bas penché vers l'avant)
+    est celui d'une inclinaison de gantry non corrigée. Attention : un cisaillement donne des étirements
+    principaux inégaux (valeurs singulières `scales`, de produit 1) SANS que la tête ait changé de taille.
     """
     A = np.array(transform.GetMatrix()).reshape(3, 3)       # FIXE -> MOBILE
     det = float(np.linalg.det(A))
     B = np.linalg.inv(A)                                    # MOBILE -> FIXE : ce qu'on fait subir au PET
-    U, S, Vt = np.linalg.svd(B)
-    rotation = U @ Vt
-    angles = Rotation.from_matrix(rotation if np.linalg.det(rotation) > 0 else -rotation).as_euler("xyz", degrees=True)
+    S = np.linalg.svd(B, compute_uv=False)                  # étirements principaux (information)
 
+    # B = Q x K : Q = rotation de la tête ; K = échelles et cisaillements dans les axes du PET.
     Q, K = np.linalg.qr(B)
     signs = np.where(np.diag(K) < 0, -1.0, 1.0)
     Q, K = Q * signs, K * signs[:, None]
+    angles = Rotation.from_matrix(Q if np.linalg.det(Q) > 0 else -Q).as_euler("xyz", degrees=True)
     shear = {"xy": np.degrees(np.arctan2(K[0, 1], K[1, 1])),
              "xz": np.degrees(np.arctan2(K[0, 2], K[2, 2])),
              "yz": np.degrees(np.arctan2(K[1, 2], K[2, 2]))}
@@ -263,8 +263,8 @@ def describe_transform(transform):
 def check_transform(info, settings):
     """Garde-fous. Renvoie (problèmes bloquants, avertissements).
 
-    Bloquant : effet miroir, rotation énorme (tête retournée), échelle absurde.
-    Avertissement : rotation importante mais plausible (tête penchée dans le TEP), échelles inégales.
+    Bloquant : effet miroir, rotation énorme (tête retournée), échelle par axe absurde, cisaillement énorme.
+    Avertissement : rotation importante mais plausible (tête penchée), cisaillement notable (gantry ?).
     """
     problems, warnings = [], []
     if info["determinant"] <= 0:
@@ -276,12 +276,12 @@ def check_transform(info, settings):
         warnings.append(f"rotation de {biggest:.0f} degrés : fréquent si la tête était penchée dans le TEP, "
                         "mais vérifiez bien la figure de contrôle")
     low, high = settings["scale_range"]
-    if info["scales"].min() < low or info["scales"].max() > high:
-        problems.append(f"échelle suspecte {np.round(info['scales'], 3)} (plage acceptée {low} à {high})")
-    elif info["scales"].max() / info["scales"].min() > 1.15:
-        warnings.append(f"échelles très inégales {np.round(info['scales'], 3)} : une tête réelle varie rarement "
-                        "de plus de 10 % d'un axe à l'autre. Regardez la décomposition par axe (cisaillement ?)")
-    if abs(info["shear_deg"]["yz"]) > 8:
+    if info["axis_scales"].min() < low or info["axis_scales"].max() > high:
+        problems.append(f"échelle par axe suspecte {np.round(info['axis_scales'], 3)} (plage acceptée {low} à {high})")
+    worst_shear = max(abs(v) for v in info["shear_deg"].values())
+    if worst_shear > settings["max_shear_deg"]:
+        problems.append(f"cisaillement de {worst_shear:.0f} degrés (au-delà de {settings['max_shear_deg']})")
+    elif abs(info["shear_deg"]["yz"]) > 8:
         warnings.append(f"cisaillement y-z de {info['shear_deg']['yz']:.0f} degrés : typique d'une inclinaison de gantry "
                         "non corrigée à la conversion DICOM -> NIfTI. À vérifier dans l'en-tête DICOM "
                         "(balise 0018,1120 : GantryDetectorTilt)")
@@ -326,6 +326,7 @@ def decide_model(settings, similarity, affine, m_sim, m_aff):
 # ----------------------------------------------------------------------------------------------
 def run(cfg):
     started = time.time()
+    stamp = time.strftime("%d/%m/%Y %H:%M")      # écrit dans chaque figure : on voit qu'elle est récente
     paths, settings = cfg["paths"], cfg["registration"]
 
     # --- Entrées ---
@@ -405,7 +406,7 @@ def run(cfg):
     qc.save_gallery([(f"candidat {r['k']} : départ {r['pitch']:+d}°, {r['final']}, Dice {r['metrics']['dice']:.3f}, "
                       f"NMI {r['metrics']['nmi']:.4f}" + ("  <= retenu" if r is chosen else ""), r["pet"])
                      for r in results], silhouette_array > 0, paths["qc_dir"] / "02_candidates.png",
-                    "Candidats : mêmes coupes, même fenêtre d'affichage")
+                    f"Candidats : mêmes coupes, même fenêtre d'affichage (exécuté le {stamp})")
 
     # --- 4. Comparaison des étages pour le candidat retenu ---
     print("4) Étages du candidat retenu (A départ, B rigide, C similarité, D affine complet)...")
@@ -421,7 +422,7 @@ def run(cfg):
     qc.save_gallery([("A départ par la forme", pet_a), ("B rigide", pet_b),
                      ("C similarité", chosen["pet_sim"]), ("D affine complet", chosen["pet_aff"])],
                     silhouette_array > 0, paths["qc_dir"] / "02_stages.png",
-                    "Étages du candidat retenu : mêmes coupes, même fenêtre d'affichage")
+                    f"Étages du candidat retenu : mêmes coupes, même fenêtre d'affichage (exécuté le {stamp})")
     del pet_a, pet_b
     for r in results:
         r["pet"] = r["pet_sim"] = r["pet_aff"] = None
@@ -465,7 +466,7 @@ def run(cfg):
         raise RuntimeError("Le PET recalé n'est pas sur la grille du MNI152 : anomalie.")
     figure = paths["qc_dir"] / ("02_reference_in_mni.png" if accepted else prefix + "reference_in_mni.png")
     qc.save_registration_check(io_utils.get_data_float32(mni_img), io_utils.get_data_float32(reg_img), figure,
-                               "Contrôle du recalage PET de référence -> MNI152" + ("" if accepted else " (REJETÉ)"),
+                               f"Contrôle du recalage PET de référence -> MNI152 (exécuté le {stamp})" + ("" if accepted else " (REJETÉ)"),
                                silhouette_array > 0)
     print(f"Figures : {figure} | {paths['qc_dir'] / '02_candidates.png'} | {paths['qc_dir'] / '02_stages.png'} | "
           f"{paths['qc_dir'] / '02_pose_scan.png'}")
