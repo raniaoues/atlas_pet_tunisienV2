@@ -1,0 +1,67 @@
+# config.yaml : la "recette" ET le "contrat" du projet.
+# - Pour changer de données ou de réglage, on modifie CE fichier, pas le code.
+# - Chaque fichier produit par une étape a ICI son nom unique : celui qui l'écrit
+#   et celui qui le lit utilisent la même ligne. C'est ce qui garde le pipeline cohérent.
+# Les chemins sont relatifs au dossier qui contient ce fichier.
+# Vocabulaire : "carte de régions" = le fichier AAL3 (entrée). Le mot "atlas" est réservé
+# au RÉSULTAT du projet (le template PET moyen tunisien).
+
+paths:
+  # ---------- ENTRÉES (vos données, jamais modifiées) ----------
+  raw_dir: data/RAW                          # les 80 PET sujets
+  reference_pet: data/Reference/971882.nii   # le PET de référence
+  mni_template: data/mni_template/MNI152.nii            # IRM MNI152 (tête entière)
+  region_map: data/region_map/AAL3v1_1mm.nii            # carte de régions AAL3 (un numéro par région)
+  region_labels: data/region_labels/AAL3v1_1mm.nii.txt     # dictionnaire numéro -> nom de région
+
+  # ---------- DOSSIERS DE SORTIE (créés automatiquement) ----------
+  interim_dir: data/interim
+  processed_dir: data/processed
+  transforms_dir: transforms
+  qc_dir: reports/qc_figures
+
+  # ---------- FICHIERS PRODUITS PAR CHAQUE ÉTAPE ----------
+  inspection_csv: data/interim/00_inspection.csv                 # étape 0
+  brain_mask: data/interim/01_brain_mask.nii.gz                  # étape 1 (grille du PET d'origine)
+  mni_brain_mask: data/interim/02_mni_brain_mask.nii.gz          # étape 2 (cerveau du MNI152, pour la similarité)
+  reference_in_mni: data/interim/02_reference_in_mni.nii.gz      # étape 2 (pipeline 1)
+  reference_transform: transforms/02_reference_to_mni.tfm        # étape 2
+  registration_metrics: data/interim/02_registration_metrics.csv # étape 2 : comparaison des candidats et des étages
+  brain_mask_in_mni: data/interim/02_brain_mask_in_mni.nii.gz    # étape 2 (masque déplacé avec la référence)
+  reference_segmented: data/interim/03_reference_segmented.nii.gz  # étape 3 (pipeline 2) : régions sur la grille du PET
+  regions_table: data/interim/03_regions_table.csv                # étape 3 : volumes et couverture par région
+  subjects_registered_dir: data/interim/04_subjects_registered   # étape 4 (pipeline 3)
+  subjects_transforms_dir: transforms/04_subjects                # étape 4
+  template: data/processed/05_template_pet_moyen.nii.gz          # étape 5 (pipeline 4)
+
+mask:
+  threshold_fraction: 0.20     # seuil = 20 % d'une valeur de référence robuste (à régler visuellement)
+  reference_percentile: 99.5   # valeur de référence = ce percentile des voxels positifs (pas le maximum)
+  closing_iterations: 2        # referme les fentes de quelques voxels (0 = désactivé)
+  try_thresholds: [0.18, 0.20, 0.22, 0.25, 0.30]   # seuils comparés dans 01_mask_threshold_comparison.png
+
+registration:
+  # --- Modèle de transformation ---
+  model: similarity                   # similarity (7 paramètres, stable) ou affine (12 paramètres, à comparer)
+
+  # --- Départ par la forme : balayage des inclinaisons de la tête ---
+  pose_pitch_range_deg: [-60, 60]     # inclinaisons testées (degrés)
+  pose_pitch_step_deg: 5              # pas du balayage
+  pose_shift_range_mm: 12             # décalage avant/arrière et haut/bas testé (mm)
+  n_candidates: 3                     # nombre de départs raffinés par information mutuelle, puis comparés
+  candidate_min_separation_deg: 15    # écart minimal entre deux candidats (degrés)
+  candidate_override: null            # numéro (1, 2, 3...) pour imposer un candidat après avoir regardé la galerie
+
+  # --- Information mutuelle (raffinement) ---
+  mutual_information_bins: 50         # finesse de l'histogramme joint PET/IRM
+  sampling_percentage: 0.2            # part des voxels utilisés à chaque calcul de similarité (tirage aléatoire)
+  iterations: 150                     # nombre maximum d'itérations par niveau de résolution
+  shrink_factors: [4, 2, 1]           # pyramide de résolutions : du grossier (4) au fin (1)
+  smoothing_sigmas_mm: [4, 2, 1]      # flou appliqué à chaque niveau (mm)
+  fixed_mask_dilation_mm: 4           # élargissement du masque du MNI152 (mm)
+  random_seed: 42                     # même résultat à chaque exécution
+
+  # --- Garde-fous ---
+  warn_rotation_deg: 15               # au-delà : avertissement (à vérifier sur la figure)
+  max_rotation_deg: 60                # au-delà : rejet (tête retournée ?)
+  scale_range: [0.8, 1.25]            # échelle plausible de la tête

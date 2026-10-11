@@ -1,0 +1,22 @@
+env_atlas/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Données médicales
+data/
+*.nii
+*.nii.gz
+*.dcm
+
+# Modèles entraînés
+*.pt
+*.pth
+*.h5
+
+# Secrets
+.env
+
+# Logs
+*.log
