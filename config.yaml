@@ -13,6 +13,9 @@ paths:
   mni_template: data/mni_template/MNI152.nii # IRM MNI152 (tête entière)
   region_map: data/region_map/AAL3v1_1mm.nii # carte de régions AAL3 (un numéro par région)
   region_labels: data/region_labels/AAL3v1_1mm.nii.txt  # dictionnaire numéro -> nom de région
+  #mni_template: data/mni_template/mni_icbm152_t1_tal_nlin_asym_09c.nii
+  mni_mask: data/mni_template/mni_icbm152_t1_tal_nlin_asym_09c_mask.nii
+
 
   # ---------- DOSSIERS DE SORTIE (créés automatiquement) ----------
   interim_dir: data/interim
@@ -41,6 +44,8 @@ mask:
   try_thresholds: [0.18, 0.20, 0.22, 0.25, 0.30]   # seuils comparés dans 01_mask_threshold_comparison.png
 
 registration:
+
+  pseudo_source: t1_brain
   # --- Modèle de transformation ---
   model: auto                         # auto, similarity (7 paramètres) ou affine (12 paramètres)
   auto_min_dice_gain: 0.02            # auto : l'affine n'est retenu que s'il gagne au moins ce Dice...
