@@ -73,3 +73,39 @@ registration:
   max_rotation_deg: 60                # au-delà : rejet (tête retournée ?)
   scale_range: [0.8, 1.25]            # échelle plausible de la tête, par axe du PET
   max_shear_deg: 35                   # cisaillement maximal plausible (une inclinaison de gantry va jusqu'à ~30)
+  
+ 
+  # --- Cible et critère du raffinement ---
+  metric: correlation                 # correlation (PET sur pseudo-TEP fabriquée depuis la T1) ou mutual_information (PET sur T1)
+  pseudo_pet_weights: [0.05, 1.0, 0.4]  # activité relative : liquide, substance grise, substance blanche (gris/blanc = 2,5)
+  pseudo_pet_fwhm_mm: 7               # flou de la pseudo-TEP (résolution d'un TEP, mm)
+  mutual_information_bins: 50         # (metric: mutual_information seulement) finesse de l'histogramme joint PET/IRM
+  sampling_percentage: 0.2            # part des voxels utilisés à chaque calcul de similarité (tirage aléatoire)
+  iterations: 150                     # nombre maximum d'itérations par niveau de résolution
+  shrink_factors: [4, 2, 1]           # pyramide de résolutions : du grossier (4) au fin (1)
+  smoothing_sigmas_mm: [4, 2, 1]      # flou appliqué à chaque niveau (mm)
+  fixed_mask_dilation_mm: 4           # élargissement du masque du MNI152 (mm)
+  random_seed: 42                     # même résultat à chaque exécution
+
+registration_dl:
+  moving: data/Reference/971882.nii.gz              # PET à déplacer
+  fixed_mask: data/interim/02_mni_brain_mask.nii.gz
+  moving_mask: data/interim/01_brain_mask.nii.gz
+  model: affine
+  starts: [-105, -90, -75, -60, -45, -30, -15, 0, 15]
+  moving_dilate_vox: 3  
+  iterations: 150
+  samples: 40000
+  min_nmi: 1.10                                  # seuil pour juger qu'un essai "marche" (à calibrer)
+  attempts:                                      # essayés dans l'ordre, arrêt au premier qui passe
+    - name: mi_t1
+      fixed: data/mni_template/MNI152.nii        # vraie IRM, doit être sur la grille de fixed_mask
+      loss: soft_mi
+    - name: pseudo
+      fixed: data\interim\02_pseudo_pet.nii.gz
+      loss: ncc
+  out: transforms/02_dl_{name}.tfm
+  resampled: data/interim/02_reference_in_mni_dl_{name}.nii.gz
+  mask_out: data/interim/02_brain_mask_in_mni_dl_{name}.nii.gz
+  overlay: reports/qc_figures/02_dl_{name}_overlay.png
+  out_final: transforms/02_dl.tfm                # copie de l'essai retenu
